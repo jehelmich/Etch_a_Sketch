@@ -12,17 +12,26 @@ runs a bare-metal C program on it. The dials, buttons, hex displays and
 framebuffer are all memory-mapped peripherals on an Avalon bus, so the sketch
 itself is about sixty lines of ordinary C.
 
+### [Draw on it in your browser →](https://jehelmich.github.io/Etch_a_Sketch/)
+
 ![A rectangle drawn by the simulated SoC](docs/images/sketch.png)
 
-That rectangle was drawn without an FPGA. It is the framebuffer contents after
-a Verilator simulation booted the Clarvi core, ran the compiled firmware, and
-turned the dials 260 times — which you can reproduce in about a second:
+No FPGA involved, and no reimplementation in JavaScript. The SystemVerilog is
+translated to C++ by [Verilator](https://verilator.org) and compiled to
+WebAssembly, so the processor really is executing in the tab. Your keypresses
+become quadrature transitions on the pins the rotary encoders drive on the
+board; the core polls them and plots pixels. It runs at about 7 MHz there
+against the hardware's 50 MHz, which for something driven by a human hand is
+not noticeable.
+
+The same thing runs natively, and headless:
 
 ```sh
-sudo apt install verilator zlib1g-dev gcc-riscv64-unknown-elf
+sudo apt install verilator zlib1g-dev gcc-riscv64-unknown-elf libsdl2-dev
 git clone --recurse-submodules https://github.com/jehelmich/Etch_a_Sketch.git
 cd Etch_a_Sketch/software && make RISCV_PREFIX=riscv64-unknown-elf-
-cd ../sim && make soc
+cd ../sim && make run      # a window, arrow keys turn the dials
+cd ../sim && make soc      # no window: draws a rectangle, writes a PNG
 ```
 
 ```
@@ -31,6 +40,8 @@ cd ../sim && make soc
 PASS  soc                      5 checks
 ```
 
+The browser page only lets you drive the device. To change it — the drawing
+code, the peripherals, the processor — clone the repository:
 [docs/simulation.md](docs/simulation.md) explains what is real RTL and what is
 a model, and [docs/extending.md](docs/extending.md) walks through adding a
 peripheral end to end.
@@ -88,6 +99,8 @@ software/
 sim/
   rtl/            stands in for the Qsys interconnect
   tb/             Verilator testbenches, per peripheral and for the whole SoC
+  app/            interactive front end, SDL2 natively and in the browser
+  web/            the page the WebAssembly build is served in
 third_party/
   clarvi/         the RISC-V core, as a pinned git submodule
 docs/             architecture, build, simulation and extension notes
@@ -102,6 +115,8 @@ make -C sim lint                 # static checks over the hand-written RTL
 make -C sim test                 # unit-test each peripheral
 make -C software                 # cross-compile the firmware
 make -C sim soc                  # run that firmware on the simulated SoC
+make -C sim run                  # the same, with a window and working dials
+make -C sim serve                # build for the browser and serve it
 ```
 
 For the FPGA image you need Quartus Prime, the DE1-SoC and the Cambridge
@@ -114,8 +129,9 @@ Archived university work, restructured in 2026 and given a test suite it never
 had. What is and is not verified:
 
 - **The RTL and firmware run.** The peripherals are unit-tested, and the whole
-  SoC executes the real firmware under Verilator on every push. That covers the
-  Clarvi core, both rotary decoders, the button scanner and the memory map.
+  SoC executes the real firmware under Verilator on every push, natively and as
+  WebAssembly. That covers the Clarvi core, both rotary decoders, the button
+  scanner and the memory map.
 - **The FPGA build has not been reproduced.** It compiled cleanly in 2017 —
   2,803 ALMs, 9% of the Cyclone V, with 64% of its block RAM given over to the
   framebuffer — but I no longer have the board or that toolchain. Known

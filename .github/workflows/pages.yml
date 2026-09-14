@@ -1,0 +1,50 @@
+name: Deploy the browser build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow one deployment at a time; let a newer push supersede a running one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Install Verilator and a RISC-V cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            verilator zlib1g-dev gcc-riscv64-unknown-elf
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+      - name: Build the firmware
+        run: make -C software RISCV_PREFIX=riscv64-unknown-elf-
+      - name: Build the WebAssembly front end
+        run: make -C sim web
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: sim/build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

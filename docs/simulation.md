@@ -24,12 +24,14 @@ brew install verilator riscv64-elf-gcc
 Verilator 5 or later. The RISC-V compiler is only needed to build the firmware;
 the peripheral tests run without it.
 
-## The three things you can run
+## What you can run
 
 ```sh
 make -C sim lint     # static checks over the hand-written RTL
 make -C sim test     # unit-test each peripheral
 make -C sim soc      # run the firmware on the whole SoC, write a PNG
+make -C sim run      # the same, in a window, with working dials
+make -C sim serve    # build for the browser and serve it on :8000
 ```
 
 `make -C sim soc` needs a firmware image first:
@@ -49,6 +51,58 @@ PASS  soc                      5 checks
 ```
 
 Roughly six million simulated cycles, in about half a second.
+
+## Driving it by hand
+
+`make -C sim run` opens a window on the simulation. Arrow keys or WASD turn the
+dials, space clears the screen, Q quits. It needs SDL2:
+
+```sh
+sudo apt install libsdl2-dev     # or: brew install sdl2
+```
+
+The title bar reports the simulated clock rate. On an M3 Pro that is about
+10.8 MHz natively and 7.0 MHz through WebAssembly, against the board's 50 MHz.
+That sounds like a problem and is not: a dial detent takes milliseconds of
+simulated time against a 655 us debounce window, and the polling loop runs tens
+of thousands of times a second against a hand that manages a hundred. The one
+visible consequence is that clearing the screen -- 130,560 pixels, written one
+at a time by the processor -- takes about a quarter of a second.
+
+`--headless` runs a canned input sequence with fixed timing instead of reading
+the keyboard, draws a rectangle, clears it, and reports whether both worked.
+That is what CI runs, since a runner has no display:
+
+```sh
+sim/build/etch --headless +mem=software/build/mem.txt
+```
+
+## In a browser
+
+```sh
+make -C sim serve      # then open http://localhost:8000/
+```
+
+Verilator emits C++, and Emscripten compiles that to WebAssembly; SDL2 comes
+from Emscripten's own port, and the firmware image is baked into the virtual
+file system so `$readmemh` still finds it. Appending `?demo` to the URL runs the
+same canned input the headless self-test uses, which is handy for checking the
+build without a pair of hands.
+
+Two things needed working around, both worth knowing if you touch the build:
+
+- Emscripten's headers define `CPU_ZERO`, so Verilator's host-introspection
+  helper takes its Linux path and calls `pthread_getaffinity_np` and friends,
+  which the runtime only provides when pthreads are enabled. Enabling pthreads
+  would mean SharedArrayBuffer and COOP/COEP response headers, which a static
+  host will not necessarily send. `sim/app/etch.cpp` answers those three
+  functions directly instead — a browser tab has one thread.
+- The renderer must not demand `SDL_RENDERER_ACCELERATED`. Where WebGL is
+  unavailable the call fails and takes the whole program with it, and nothing
+  here troubles a software renderer.
+
+The page is deployed to GitHub Pages from `.github/workflows/pages.yml` on every
+push to `main`.
 
 ## What is actually being simulated
 

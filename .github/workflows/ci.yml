@@ -36,6 +36,11 @@ jobs:
         run: make -C software RISCV_PREFIX=riscv64-unknown-elf-
       - name: Run the SoC simulation
         run: make -C sim soc
+      - name: Check the interactive front end
+        run: |
+          sudo apt-get install -y --no-install-recommends libsdl2-dev
+          make -C sim app
+          sim/build/etch --headless +mem=software/build/mem.txt
       - name: Keep the picture it drew
         uses: actions/upload-artifact@v5
         with:
