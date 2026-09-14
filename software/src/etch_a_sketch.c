@@ -14,9 +14,11 @@ void etch_a_sketch(void)
 	int y = DISPLAY_HEIGHT / 2;
 
 	// Each RotaryCtl2 exposes a free-running 8-bit position counter; we only
-	// care about the direction it moved since the last time we looked.
-	int last_left = 10;
-	int last_right = 10;
+	// care about the direction it moved since the last time we looked. Seed
+	// both from the hardware, or the first poll sees a change that never
+	// happened and nudges the cursor before the user touches anything.
+	int last_left = avalon_read(PIO_ROTARY_L);
+	int last_right = avalon_read(PIO_ROTARY_R);
 
 	vid_set_pixel(x, y, PIXEL_WHITE);
 
