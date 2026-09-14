@@ -52,7 +52,7 @@ lint: | $(BUILD)
 # ---------------------------------------------------------------------------
 define UNIT_rule
 $(BUILD)/V$(top_$(1)): tb/tb_$(1).cpp common/tb.h $$(src_$(top_$(1))) $(WAIVERS) | $(BUILD)
-	@$(VERILATOR) $(VFLAGS) $$(GFLAGS_$(1)) --top-module $(top_$(1)) $(WAIVERS) $$(src_$(top_$(1))) tb/tb_$(1).cpp \
+	@$(VERILATOR) $(VFLAGS) $$(GFLAGS_$(1)) --top-module $(top_$(1)) $(WAIVERS) $$(src_$(top_$(1))) $(CURDIR)/tb/tb_$(1).cpp \
 	  -o $(CURDIR)/$$@ > $(BUILD)/$(1).buildlog 2>&1 || { cat $(BUILD)/$(1).buildlog; exit 1; }
 endef
 $(foreach u,$(UNITS),$(eval $(call UNIT_rule,$(u))))
@@ -71,14 +71,18 @@ SOC_SRCS := rtl/soc_sim.sv \
             $(IP)/rotary_ctl/rotary.sv $(IP)/rotary_ctl/debounce.sv \
             $(IP)/shift_reg_ctl/shiftregctl.sv \
             $(CLARVI)/clarvi_avalon.sv $(CLARVI)/clarvi.sv
-SOC_VFLAGS := $(VFLAGS) -I$(CLARVI) --top-module soc_sim
+# -Wno-UNOPTFLAT: Clarvi's forwarding paths look like combinational loops to
+# Verilator. It costs simulation speed, not correctness, and it is reported
+# during a phase where the file-scoped waiver in waivers.vlt does not catch it
+# on older Verilator releases.
+SOC_VFLAGS := $(VFLAGS) -Wno-UNOPTFLAT -I$(CLARVI) --top-module soc_sim
 
 $(BUILD)/Vsoc_sim: rtl/soc_sim.sv tb/tb_soc.cpp common/png.h common/tb.h | $(BUILD)
-	@$(VERILATOR) $(SOC_VFLAGS) $(WAIVERS) $(SOC_SRCS) tb/tb_soc.cpp \
+	@$(VERILATOR) $(SOC_VFLAGS) $(WAIVERS) $(SOC_SRCS) $(CURDIR)/tb/tb_soc.cpp \
 	  -LDFLAGS -lz -o $(CURDIR)/$@ > $(BUILD)/soc.buildlog 2>&1 || { cat $(BUILD)/soc.buildlog; exit 1; }
 
 $(BUILD)/Vsoc_sim_trace: rtl/soc_sim.sv tb/tb_soc.cpp common/png.h common/tb.h | $(BUILD)
-	@$(VERILATOR) $(subst $(BUILD)/obj,$(BUILD)/obj_trace,$(SOC_VFLAGS)) --trace -CFLAGS -DTRACE $(WAIVERS) $(SOC_SRCS) tb/tb_soc.cpp \
+	@$(VERILATOR) $(subst $(BUILD)/obj,$(BUILD)/obj_trace,$(SOC_VFLAGS)) --trace -CFLAGS -DTRACE $(WAIVERS) $(SOC_SRCS) $(CURDIR)/tb/tb_soc.cpp \
 	  -LDFLAGS -lz -o $(CURDIR)/$@ > $(BUILD)/soctrace.buildlog 2>&1 || { cat $(BUILD)/soctrace.buildlog; exit 1; }
 
 FIRMWARE := ../software/build/mem.txt
