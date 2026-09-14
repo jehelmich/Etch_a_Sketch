@@ -12,7 +12,7 @@ runs a bare-metal C program on it. The dials, buttons, hex displays and
 framebuffer are all memory-mapped peripherals on an Avalon bus, so the sketch
 itself is about sixty lines of ordinary C.
 
-### [Draw on it in your browser →](https://jehelmich.github.io/Etch_a_Sketch/)
+### [Draw on it in your browser →](https://www.hlmch.com/Etch_a_Sketch/)
 
 ![A rectangle drawn by the simulated SoC](docs/images/sketch.png)
 
