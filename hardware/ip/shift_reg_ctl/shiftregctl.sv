@@ -16,8 +16,10 @@ module shiftregctl (
   logic clk_inhibit;
   
   always_comb begin
-    shiftreg_clk = clk && !clk_inhibit;
+    // states 0 and 16..18 are the idle and load phases, when the shift
+    // register must not be clocked
     clk_inhibit = (state == 0 || state == 16 || state == 17 || state == 18);
+    shiftreg_clk = clk && !clk_inhibit;
     shiftreg_loadn = !(state==17);
   end
   
@@ -40,7 +42,9 @@ module shiftregctl (
             end
             else begin
                 state <= state + 1;
-                tmp[state] <= shiftreg_out;
+                // only states 0..15 carry a data bit; 16 and 17 load
+                if (state < 16)
+                    tmp[state[3:0]] <= shiftreg_out;
             end
         end
       end

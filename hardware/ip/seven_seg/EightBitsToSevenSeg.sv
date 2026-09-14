@@ -9,9 +9,9 @@ module EightBitsToSevenSeg(
 	output logic [6:0] digit1
 );
         function [6:0] ledcode;
-                input [3:0] hexval;
+                input [3:0] nibble;
 
-                case (hexval)
+                case (nibble)
                         4'h0: ledcode = 7'b0111111;
                         4'h1: ledcode = 7'b0000110;
                         4'h2: ledcode = 7'b1011011;

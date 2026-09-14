@@ -1,4 +1,9 @@
-module debounce (
+// The input must hold steady for 2**COUNTER_WIDTH clocks before a new value is
+// accepted. At 50 MHz the default of 15 gives about 655 us, comfortably longer
+// than the contacts bounce. Simulation overrides it to keep runs short.
+module debounce #(
+        parameter COUNTER_WIDTH = 15
+) (
         input wire       clk,       // 50MHz clock input
         input wire       rst,       // reset input (positive)
         input wire       bouncy_in, // bouncy asynchronous input
@@ -10,7 +15,7 @@ module debounce (
 	reg metastable;
 	reg syncbouncy;
 	reg [15:0] numbounces;
-	reg [14:0] counter;
+	reg [COUNTER_WIDTH-1:0] counter;
 	wire counterAtMax = &counter;
         /* Add synchronous debouncing logic */
 	always_ff @(posedge clk or posedge rst)

@@ -1,6 +1,7 @@
 // rotary decoder template
-module rotary
-  (
+module rotary #(
+    parameter DEBOUNCE_COUNTER_WIDTH = 15
+  ) (
 	input  wire clk,
 	input  wire rst,
 	input  wire [1:0] rotary_in,
@@ -15,8 +16,8 @@ module rotary
 
         /* Instantiate debouncing components */
 
-		debounce db1(.clk(clk),.rst(0),.bouncy_in(rotary_in[0]),.clean_out(db_rot_in[0]));
-		debounce db2(.clk(clk),.rst(0),.bouncy_in(rotary_in[1]),.clean_out(db_rot_in[1]));
+		debounce #(.COUNTER_WIDTH(DEBOUNCE_COUNTER_WIDTH)) db1(.clk(clk),.rst(0),.bouncy_in(rotary_in[0]),.clean_out(db_rot_in[0]));
+		debounce #(.COUNTER_WIDTH(DEBOUNCE_COUNTER_WIDTH)) db2(.clk(clk),.rst(0),.bouncy_in(rotary_in[1]),.clean_out(db_rot_in[1]));
 
         /* Synchronous output value manipulation logic */
 		always_ff @(posedge rst or posedge clk)
