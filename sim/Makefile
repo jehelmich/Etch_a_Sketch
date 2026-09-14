@@ -29,7 +29,7 @@ GFLAGS_rotary   := -GDEBOUNCE_COUNTER_WIDTH=4
 top_shiftregctl := shiftregctl
 top_seven_seg   := EightBitsToSevenSeg
 
-.PHONY: all lint test soc waves clean
+.PHONY: all lint test soc waves app run web serve clean
 all: lint test
 
 # ---------------------------------------------------------------------------
@@ -85,6 +85,18 @@ $(BUILD)/Vsoc_sim_trace: rtl/soc_sim.sv tb/tb_soc.cpp common/png.h common/tb.h |
 	@$(VERILATOR) $(subst $(BUILD)/obj,$(BUILD)/obj_trace,$(SOC_VFLAGS)) --trace -CFLAGS -DTRACE $(WAIVERS) $(SOC_SRCS) $(CURDIR)/tb/tb_soc.cpp \
 	  -LDFLAGS -lz -o $(CURDIR)/$@ > $(BUILD)/soctrace.buildlog 2>&1 || { cat $(BUILD)/soctrace.buildlog; exit 1; }
 
+# ------------------------------------------------- interactive front end ---
+SDL_CFLAGS := $(shell sdl2-config --cflags 2>/dev/null)
+SDL_LIBS   := $(shell sdl2-config --libs 2>/dev/null)
+APP_VFLAGS := $(subst $(BUILD)/obj,$(BUILD)/obj_app,$(SOC_VFLAGS)) -O3
+
+$(BUILD)/etch: app/etch.cpp rtl/soc_sim.sv common/png.h | $(BUILD)
+	@test -n "$(SDL_CFLAGS)$(SDL_LIBS)" || { \
+	  echo "SDL2 not found. Install it:  brew install sdl2   |   apt install libsdl2-dev"; exit 1; }
+	@$(VERILATOR) $(APP_VFLAGS) $(WAIVERS) $(SOC_SRCS) $(CURDIR)/app/etch.cpp \
+	  -CFLAGS "$(SDL_CFLAGS)" -LDFLAGS "$(SDL_LIBS) -lz" -o $(CURDIR)/$@ \
+	  > $(BUILD)/app.buildlog 2>&1 || { cat $(BUILD)/app.buildlog; exit 1; }
+
 FIRMWARE := ../software/build/mem.txt
 $(FIRMWARE):
 	@echo "Firmware image missing. Build it first:"; echo "    cd ../software && make"; exit 1
@@ -92,8 +104,42 @@ $(FIRMWARE):
 soc: $(BUILD)/Vsoc_sim $(FIRMWARE)
 	$(BUILD)/Vsoc_sim +mem=$(FIRMWARE) +png=$(BUILD)/sketch.png
 
+app: $(BUILD)/etch
+
+run: $(BUILD)/etch $(FIRMWARE)
+	$(BUILD)/etch +mem=$(FIRMWARE)
+
 waves: $(BUILD)/Vsoc_sim_trace $(FIRMWARE)
 	$(BUILD)/Vsoc_sim_trace +mem=$(FIRMWARE) +png=$(BUILD)/sketch.png +vcd=$(BUILD)/soc.vcd
+
+# ------------------------------------------------------- browser build -----
+# Verilator emits C++; Emscripten compiles that to WebAssembly. SDL2 comes from
+# Emscripten's own port, and the firmware image is baked into the virtual file
+# system so $readmemh finds it.
+EMXX      ?= em++
+VROOT     := $(shell $(VERILATOR) --getenv VERILATOR_ROOT)
+WEB_OUT   := $(BUILD)/web
+WEB_FLAGS := -O3 -std=c++17 -include cstdint \
+             -sUSE_SDL=2 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=0
+
+web: $(WEB_OUT)/index.html
+
+$(WEB_OUT)/index.html: app/etch.cpp web/shell.html rtl/soc_sim.sv $(FIRMWARE) | $(BUILD)
+	@command -v $(EMXX) >/dev/null || { \
+	  echo "Emscripten not found. Install it:  brew install emscripten  |  https://emscripten.org"; exit 1; }
+	@mkdir -p $(WEB_OUT)
+	@$(VERILATOR) --cc -O3 -Wno-fatal -Wno-UNOPTFLAT -Mdir $(BUILD)/obj_web \
+	  -I$(CLARVI) --top-module soc_sim $(WAIVERS) $(SOC_SRCS) > $(BUILD)/web.buildlog 2>&1
+	@$(EMXX) $(WEB_FLAGS) \
+	  -I $(BUILD)/obj_web -I $(VROOT)/include -I $(VROOT)/include/vltstd \
+	  $(BUILD)/obj_web/*.cpp $(VROOT)/include/verilated.cpp $(VROOT)/include/verilated_threads.cpp \
+	  app/etch.cpp --embed-file $(FIRMWARE)@mem.txt --shell-file web/shell.html \
+	  -o $@ >> $(BUILD)/web.buildlog 2>&1 || { cat $(BUILD)/web.buildlog; exit 1; }
+	@echo "  built $@  ($$(du -h $(WEB_OUT)/index.wasm | cut -f1) of WebAssembly)"
+
+serve: web
+	@echo "http://localhost:8000/   (append ?demo to watch it draw by itself)"
+	@cd $(WEB_OUT) && python3 -m http.server 8000
 
 $(BUILD):
 	@mkdir -p $(BUILD)

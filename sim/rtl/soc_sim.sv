@@ -41,7 +41,10 @@ module soc_sim #(
 
     // ---------------------------------------------------------------- memory
     logic [31:0] ram [RAM_WORDS];
-    logic [31:0] fb  [FB_WORDS];
+    // Marked public so an interactive front end can blit the framebuffer
+    // straight out of the model instead of clocking it through probe_addr,
+    // which costs a full eval() per word.
+    logic [31:0] fb  [FB_WORDS] /* verilator public_flat_rd */;
 
     string mem_file;
     initial begin
