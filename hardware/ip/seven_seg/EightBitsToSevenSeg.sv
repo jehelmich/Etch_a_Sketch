@@ -5,8 +5,8 @@ module EightBitsToSevenSeg(
 	input clock,
 	input reset,
 	input [7:0] hexval,
-	output [6:0] digit0,
-	output [6:0] digit1
+	output logic [6:0] digit0,
+	output logic [6:0] digit1
 );
         function [6:0] ledcode;
                 input [3:0] hexval;
