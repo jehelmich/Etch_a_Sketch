@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  VERILATOR_VERSION: v5.052
+
 # Allow one deployment at a time; let a newer push supersede a running one.
 concurrency:
   group: pages
@@ -22,11 +25,37 @@ jobs:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
-      - name: Install Verilator and a RISC-V cross-compiler
+      # Ubuntu ships Verilator 5.020, whose headers have no VL_CPU_RELAX for
+      # wasm32 and stop with an #error. Build a release that knows about it.
+      # The native jobs in ci.yml are fine with the packaged one.
+      - name: Cache Verilator
+        id: verilator-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/verilator
+          key: verilator-${{ env.VERILATOR_VERSION }}-${{ runner.os }}
+      - name: Build Verilator
+        if: steps.verilator-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            verilator zlib1g-dev gcc-riscv64-unknown-elf
+            git autoconf g++ flex bison make python3 help2man perl \
+            libfl-dev zlib1g-dev
+          git clone --depth 1 --branch "$VERILATOR_VERSION" \
+            https://github.com/verilator/verilator.git /tmp/verilator
+          cd /tmp/verilator
+          autoconf
+          ./configure --prefix=/opt/verilator
+          make -j"$(nproc)"
+          sudo make install
+      - name: Install a RISC-V cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            zlib1g-dev gcc-riscv64-unknown-elf
+          echo "/opt/verilator/bin" >> "$GITHUB_PATH"
+      - name: Show tool versions
+        run: verilator --version
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: latest
