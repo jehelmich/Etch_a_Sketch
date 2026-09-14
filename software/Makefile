@@ -3,9 +3,9 @@ PROJECT = program
 # build directory
 BUILD = build
 
-# name of the Quartus program
-FPGA_PROJECT_PATH = ../quartus
-FPGA_PROJECT = clarvi
+# the Quartus project that carries the memory image
+FPGA_PROJECT_PATH = ../hardware/quartus
+FPGA_PROJECT = clarvi_fpga
 
 # source files
 C_FILES := $(wildcard src/*.c)
@@ -64,7 +64,7 @@ $(BUILD)/mem.txt: $(BUILD)/mem.bin
 
 # convert to an Intel HEX file for downloading to the FPGA
 $(BUILD)/mem.hex: $(BUILD)/mem.txt
-	python txt2hex.py $< $@ 4
+	python tools/txt2hex.py $< $@ 4
 
 
 # make software project folder

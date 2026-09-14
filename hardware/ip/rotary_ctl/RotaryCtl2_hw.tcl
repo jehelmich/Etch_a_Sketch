@@ -39,8 +39,8 @@ add_fileset QUARTUS_SYNTH QUARTUS_SYNTH "" ""
 set_fileset_property QUARTUS_SYNTH TOP_LEVEL rotary
 set_fileset_property QUARTUS_SYNTH ENABLE_RELATIVE_INCLUDE_PATHS false
 set_fileset_property QUARTUS_SYNTH ENABLE_FILE_OVERWRITE_MODE false
-add_fileset_file debounce.sv SYSTEM_VERILOG PATH source-files/debounce.sv
-add_fileset_file rotary.sv SYSTEM_VERILOG PATH source-files/rotary.sv TOP_LEVEL_FILE
+add_fileset_file debounce.sv SYSTEM_VERILOG PATH debounce.sv
+add_fileset_file rotary.sv SYSTEM_VERILOG PATH rotary.sv TOP_LEVEL_FILE
 
 
 # 

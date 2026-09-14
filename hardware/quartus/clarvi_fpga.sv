@@ -222,7 +222,7 @@ module clarvi_fpga(
 	 
 	 logic [23:0] hexSignal;
 	 
-	 clarvi_soc2 qsys0 (
+	 clarvi_soc qsys0 (
         .clk_clk                                  (CLOCK_50),// clk.clk
         .hex_pio_external_connection_export       (hexSignal),// hex_pio_external_connection.export
         .led_pio_external_connection_export        (LEDRINGn),// led_pio_external_connection.export
