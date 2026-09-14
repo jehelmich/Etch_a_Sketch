@@ -61,8 +61,27 @@ dials, space clears the screen, Q quits. It needs SDL2:
 sudo apt install libsdl2-dev     # or: brew install sdl2
 ```
 
-The title bar reports the simulated clock rate. On an M3 Pro that is about
-10.8 MHz natively and 7.0 MHz through WebAssembly, against the board's 50 MHz.
+The title bar reports the simulated clock rate and the frame rate. On an M3 Pro
+that is about 8.7 MHz natively and 7 MHz through WebAssembly, against the
+board's 50 MHz.
+
+Frames are paced by the display. Natively that means vsync, falling back to a
+deadline-scheduled limiter if the renderer refuses it; in the browser
+`requestAnimationFrame` does the same job. Each frame simulates a slice of the
+refresh interval — 80% of it — sized from how many cycles the machine managed
+per second of actual simulation, which is measured separately from wall-clock
+time. Measuring it wall-clock instead is a feedback loop: pacing the frames adds
+idle time, which lowers the apparent rate, which shrinks the next budget, which
+lowers it further, and the whole thing winds down.
+
+The budget is capped at the display's own refresh interval rather than the last
+frame's duration, so that missing one frame does not double the next budget and
+lock the rate at half speed.
+
+```sh
+sim/build/etch --stats          # print the rate, and what is pacing the frames
+sim/build/etch --fps=30         # only used when vsync is unavailable
+```
 That sounds like a problem and is not: a dial detent takes milliseconds of
 simulated time against a 655 us debounce window, and the polling loop runs tens
 of thousands of times a second against a hand that manages a hundred. The one

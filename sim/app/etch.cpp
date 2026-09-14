@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <thread>
 #include <string>
 #include <vector>
 #ifdef __EMSCRIPTEN__
@@ -61,10 +62,26 @@ static const uint16_t BUTTON_DIALL_CLICK = 0x2;
 // cursor one pixel.
 static const double DETENTS_PER_SECOND = 140.0;
 
-// Wall-clock time to spend simulating per displayed frame. The rest of the
-// frame goes on presenting it. Simulated time advances at whatever rate the
-// host manages, which is a fraction of the real board's 50 MHz.
-static const double SIM_BUDGET_SECONDS = 0.012;
+// Fraction of each frame spent simulating; the rest goes on presenting it and
+// on leaving the machine some headroom. Sized against the frame period actually
+// observed rather than a constant, so this behaves whether frames arrive every
+// 16.7 ms on a 60 Hz display or every 8.3 ms on a 120 Hz one.
+static const double SIM_BUDGET_FRACTION = 0.8;
+
+// Frames per second to present at natively. The browser build ignores this:
+// requestAnimationFrame already paces it to the display. 0 means free-running.
+static const int TARGET_FPS = 60;
+
+// A frame period outside this range is a stall or a spike, not a refresh rate.
+static const double MIN_FRAME_PERIOD = 1.0 / 240.0;
+static const double MAX_FRAME_PERIOD = 1.0 / 30.0;
+
+// Never budget for a frame longer than the display's own period, even if the
+// last frame took longer. Sizing purely off the measured period is a trap: miss
+// one frame with vsync on and the period doubles, so the next budget doubles,
+// so that frame is missed too, and the rate sticks at half speed. Capping the
+// budget at the refresh interval lets it recover.
+static const double DEFAULT_BUDGET_PERIOD = 1.0 / 60.0;
 
 // The Gray sequence an encoder walks through, one step per quarter detent.
 static const int GRAY[4] = {0b00, 0b01, 0b11, 0b10};
@@ -172,6 +189,9 @@ struct App {
 	SDL_Texture *tex = nullptr;
 
 	bool headless = false;   // dummy video driver, exits with a verdict
+	bool stats = false;      // also report the rate on stdout
+	bool vsync = false;      // the display is pacing us; do not also sleep
+	double budget_cap = DEFAULT_BUDGET_PERIOD; // set from the display refresh
 	bool scripted = false;   // canned input instead of the keyboard
 	std::string shot;
 	bool running = true;
@@ -181,17 +201,35 @@ struct App {
 
 	std::chrono::steady_clock::time_point last, last_report;
 	uint64_t last_cycles = 0;
-	double measured_hz = 10e6; // starting guess, corrected once a second
+	int frames_since_report = 0;
+	double measured_hz = 10e6;     // cycles per wall second: what is displayed
+	double measured_fps = 60.0;
+	int target_fps = TARGET_FPS;
+
+	// Cycles per second of time actually spent simulating. This is a property
+	// of the machine, and is what sizes each frame's budget. Using the
+	// wall-clock rate here instead would be a feedback loop: capping the frame
+	// rate adds idle time, which lowers the apparent rate, which shrinks the
+	// budget, which lowers it further.
+	double sim_throughput = 10e6;
+	double sim_seconds = 0.0;
+	std::chrono::steady_clock::time_point next_frame;
 
 	void step() {
-		auto now = std::chrono::steady_clock::now();
-		double dt = std::chrono::duration<double>(now - last).count();
-		last = now;
-		if (dt > 0.1) dt = 0.1; // do not let a stall become a huge jump
+		auto frame_start = std::chrono::steady_clock::now();
+		double dt = std::chrono::duration<double>(frame_start - last).count();
+		last = frame_start;
+
+		// Clamp before using it for anything: the first frame, and any frame
+		// after the window was dragged or the tab was hidden, reports nonsense.
+		if (dt < MIN_FRAME_PERIOD) dt = MIN_FRAME_PERIOD;
+		if (dt > MAX_FRAME_PERIOD) dt = MAX_FRAME_PERIOD;
 		if (scripted) dt = HEADLESS_DT;
 
-		uint64_t frame_cycles = scripted ? HEADLESS_CYCLES_PER_FRAME
-		                                 : (uint64_t) (measured_hz * SIM_BUDGET_SECONDS);
+		double budget_period = dt < budget_cap ? dt : budget_cap;
+		uint64_t frame_cycles =
+		    scripted ? HEADLESS_CYCLES_PER_FRAME
+		             : (uint64_t) (sim_throughput * budget_period * SIM_BUDGET_FRACTION);
 
 		SDL_Event e;
 		while (SDL_PollEvent(&e)) {
@@ -222,22 +260,32 @@ struct App {
 			sim.dut->buttons = k[SDL_SCANCODE_SPACE] ? BUTTON_DIALL_CLICK : 0;
 		}
 
+		auto sim_start = std::chrono::steady_clock::now();
 		run_frame(sim, left, right, left.quarter_steps(dt), right.quarter_steps(dt),
 		          frame_cycles);
+		sim_seconds += std::chrono::duration<double>(
+		                   std::chrono::steady_clock::now() - sim_start).count();
 
 		SDL_UpdateTexture(tex, nullptr, sim.pixels(), WIDTH * 2);
 		SDL_RenderClear(ren);
 		SDL_RenderCopy(ren, tex, nullptr, nullptr);
 		SDL_RenderPresent(ren);
 
-		double since = std::chrono::duration<double>(now - last_report).count();
+		frames_since_report++;
+		double since = std::chrono::duration<double>(frame_start - last_report).count();
 		if (since >= 1.0) {
 			measured_hz = (sim.cycles - last_cycles) / since;
-			char title[128];
+			measured_fps = frames_since_report / since;
+			if (sim_seconds > 0.0)
+				sim_throughput = (sim.cycles - last_cycles) / sim_seconds;
+			sim_seconds = 0.0;
+			frames_since_report = 0;
+			char title[160];
 			std::snprintf(title, sizeof title,
-			              "Etch A Sketch - Clarvi RV32I, simulated at %.1f MHz",
-			              measured_hz / 1e6);
+			              "Etch A Sketch - Clarvi RV32I at %.1f MHz, %.0f fps",
+			              measured_hz / 1e6, measured_fps);
 			SDL_SetWindowTitle(win, title);
+			if (stats) { std::printf("  %s\n", title); std::fflush(stdout); }
 #ifdef __EMSCRIPTEN__
 			// Show the rate on the page, where there is no title bar.
 			EM_ASM({
@@ -245,9 +293,28 @@ struct App {
 				if (el) el.textContent = UTF8ToString($0);
 			}, title);
 #endif
-			last_report = now;
+			last_report = frame_start;
 			last_cycles = sim.cycles;
 		}
+
+#ifndef __EMSCRIPTEN__
+		// Hold the presentation rate steady. Without this the loop free-runs at
+		// whatever the machine happens to manage, which drifts with load.
+		// In the browser requestAnimationFrame does this already, and sleeping
+		// inside its callback would be the wrong thing entirely.
+		if (!headless && !vsync && target_fps > 0) {
+			// Schedule against a running deadline rather than sleeping for a
+			// per-frame delta, so rounding error does not accumulate.
+			auto period = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+			    std::chrono::duration<double>(1.0 / target_fps));
+			next_frame += period;
+			auto now2 = std::chrono::steady_clock::now();
+			if (next_frame < now2)
+				next_frame = now2; // fell behind; do not try to catch up
+			else
+				std::this_thread::sleep_until(next_frame);
+		}
+#endif
 
 #ifndef __EMSCRIPTEN__
 		if (headless) {
@@ -273,6 +340,8 @@ int main(int argc, char **argv) {
 		std::string a = argv[i];
 		if (a == "--headless") app.headless = app.scripted = true;
 		else if (a.rfind("--shot=", 0) == 0) app.shot = a.substr(7);
+		else if (a.rfind("--fps=", 0) == 0) app.target_fps = std::stoi(a.substr(6));
+		else if (a == "--stats") app.stats = true;
 	}
 	if (app.headless)
 		SDL_SetHint(SDL_HINT_VIDEODRIVER, "dummy");
@@ -289,10 +358,21 @@ int main(int argc, char **argv) {
 	app.win = SDL_CreateWindow("Etch A Sketch - Clarvi RV32I, simulated",
 	                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 	                           WIDTH * SCALE, HEIGHT * SCALE, 0);
-	// Let SDL pick the backend. Forcing SDL_RENDERER_ACCELERATED fails wherever
-	// WebGL is unavailable -- headless browsers, blocklisted GPUs -- and there
-	// is nothing here that a software renderer cannot keep up with.
-	app.ren = SDL_CreateRenderer(app.win, -1, 0);
+	// Prefer to be paced by the display: vsync is exact, and sleeping for the
+	// remainder of a frame is not -- the OS routinely overshoots a short sleep
+	// by a millisecond or two, which shows up as a rate that will not sit still.
+	// Fall back to no vsync, and then to the manual limiter, if it is refused.
+	//
+	// Do not force SDL_RENDERER_ACCELERATED: it fails wherever WebGL is
+	// unavailable -- headless browsers, blocklisted GPUs -- and nothing here
+	// troubles a software renderer.
+	app.ren = SDL_CreateRenderer(app.win, -1,
+	                             app.headless ? 0 : SDL_RENDERER_PRESENTVSYNC);
+	if (!app.ren)
+		app.ren = SDL_CreateRenderer(app.win, -1, 0);
+	SDL_RendererInfo rinfo;
+	if (app.ren && SDL_GetRendererInfo(app.ren, &rinfo) == 0)
+		app.vsync = (rinfo.flags & SDL_RENDERER_PRESENTVSYNC) != 0;
 	app.tex = SDL_CreateTexture(app.ren, SDL_PIXELFORMAT_RGB565,
 	                            SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
 	if (!app.win || !app.ren || !app.tex) {
@@ -300,8 +380,18 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	// Size the per-frame budget against the display we are actually on: a 50 Hz
+	// panel gives 20 ms to work with, a 120 Hz one only 8.3 ms.
+	SDL_DisplayMode mode;
+	int hz = (SDL_GetCurrentDisplayMode(0, &mode) == 0) ? mode.refresh_rate : 0;
+	if (hz >= 30 && hz <= 240)
+		app.budget_cap = 1.0 / hz;
+	if (app.stats)
+		std::printf("  renderer %s, vsync %s, display %d Hz\n",
+		            rinfo.name ? rinfo.name : "?", app.vsync ? "on" : "off", hz);
+
 	app.sim.reset();
-	app.last = app.last_report = std::chrono::steady_clock::now();
+	app.last = app.last_report = app.next_frame = std::chrono::steady_clock::now();
 
 #ifdef __EMSCRIPTEN__
 	// Interactively, let the browser schedule frames. The canned demo asks for
