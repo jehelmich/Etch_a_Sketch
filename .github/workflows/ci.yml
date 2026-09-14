@@ -11,7 +11,7 @@ jobs:
     name: Lint and unit-test the peripherals
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Verilator
         run: |
           sudo apt-get update
@@ -24,7 +24,7 @@ jobs:
     name: Run the firmware on the simulated SoC
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - name: Install Verilator and a RISC-V cross-compiler
@@ -37,7 +37,7 @@ jobs:
       - name: Run the SoC simulation
         run: make -C sim soc
       - name: Keep the picture it drew
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sketch
           path: sim/build/sketch.png
