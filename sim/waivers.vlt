@@ -1,0 +1,19 @@
+`verilator_config
+
+// Every Qsys component is required to expose a clock and a reset, whether or
+// not its logic needs them. EightBitsToSevenSeg is purely combinational.
+lint_off -rule UNUSEDSIGNAL -file "*/seven_seg/EightBitsToSevenSeg.sv" -match "*'clock'*"
+lint_off -rule UNUSEDSIGNAL -file "*/seven_seg/EightBitsToSevenSeg.sv" -match "*'reset'*"
+
+// rotary exposes single-cycle direction pulses alongside the position counter.
+// This design reads only the counter, so the pulses go unconnected.
+lint_off -rule UNUSEDSIGNAL -file "*/rotary_ctl/rotary.sv" -match "*rot_cw*"
+lint_off -rule UNUSEDSIGNAL -file "*/rotary_ctl/rotary.sv" -match "*rot_ccw*"
+
+// Clarvi is vendored as a submodule and is not ours to change. Hold it to its
+// own standard so that -Wall stays meaningful for the RTL written here.
+lint_off -file "*/third_party/clarvi/*"
+
+// Deliberately unconnected outputs: the rotary direction pulses and Clarvi's
+// debug ports are not used by this design.
+lint_off -rule PINCONNECTEMPTY -file "*rtl/soc_sim.sv"
