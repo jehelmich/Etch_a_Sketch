@@ -1,5 +1,7 @@
 # Etch A Sketch on a RISC-V soft core
 
+[![CI](https://github.com/jehelmich/Etch_a_Sketch/actions/workflows/ci.yml/badge.svg)](https://github.com/jehelmich/Etch_a_Sketch/actions/workflows/ci.yml)
+
 An [Etch A Sketch](https://en.wikipedia.org/wiki/Etch_A_Sketch) built on a
 Terasic DE1-SoC FPGA board: two rotary dials draw a line on an LCD panel, and
 pressing either dial clears the screen.
@@ -10,10 +12,32 @@ runs a bare-metal C program on it. The dials, buttons, hex displays and
 framebuffer are all memory-mapped peripherals on an Avalon bus, so the sketch
 itself is about sixty lines of ordinary C.
 
+![A rectangle drawn by the simulated SoC](docs/images/sketch.png)
+
+That rectangle was drawn without an FPGA. It is the framebuffer contents after
+a Verilator simulation booted the Clarvi core, ran the compiled firmware, and
+turned the dials 260 times — which you can reproduce in about a second:
+
+```sh
+sudo apt install verilator zlib1g-dev gcc-riscv64-unknown-elf
+git clone --recurse-submodules https://github.com/jehelmich/Etch_a_Sketch.git
+cd Etch_a_Sketch/software && make RISCV_PREFIX=riscv64-unknown-elf-
+cd ../sim && make soc
+```
+
+```
+  drew 260 pixels in 280016 cycles
+  wrote build/sketch.png
+PASS  soc                      5 checks
+```
+
+[docs/simulation.md](docs/simulation.md) explains what is real RTL and what is
+a model, and [docs/extending.md](docs/extending.md) walks through adding a
+peripheral end to end.
+
 Undergraduate coursework for the University of Cambridge
 [ECAD and Architecture practical classes](https://www.cl.cam.ac.uk/teaching/1617/ECAD+Arch/),
-November 2017. Published as an archive — see [Status](#status) before trying to
-build it.
+November 2017. See [Status](#status) before trying to build the FPGA image.
 
 ## How it works
 
@@ -61,45 +85,44 @@ software/
   src/            bare-metal C and the RISC-V startup assembly
   tools/          memory-image conversion helper
   Makefile        builds the program and writes it into the FPGA bitfile
+sim/
+  rtl/            stands in for the Qsys interconnect
+  tb/             Verilator testbenches, per peripheral and for the whole SoC
 third_party/
   clarvi/         the RISC-V core, as a pinned git submodule
-docs/             architecture notes and build instructions
-```
-
-Clone with submodules, or the core will be missing:
-
-```sh
-git clone --recurse-submodules https://github.com/jehelmich/Etch_a_Sketch.git
+docs/             architecture, build, simulation and extension notes
 ```
 
 ## Building
 
-Short version, once the prerequisites are in place:
+Three things can be built independently.
 
 ```sh
-cd software && make          # build the program image
-make update-mem              # write it into the FPGA bitfile
-make download                # program the board over JTAG
+make -C sim lint                 # static checks over the hand-written RTL
+make -C sim test                 # unit-test each peripheral
+make -C software                 # cross-compile the firmware
+make -C sim soc                  # run that firmware on the simulated SoC
 ```
 
-This needs a `riscv32-unknown-elf` GCC, Quartus Prime, the DE1-SoC board and the
-Cambridge display board, and a one-off Qsys generation step. The full
-instructions are in [docs/building.md](docs/building.md).
+For the FPGA image you need Quartus Prime, the DE1-SoC and the Cambridge
+display board, and a one-off Qsys generation step —
+[docs/building.md](docs/building.md).
 
 ## Status
 
-This is an archived university project, restructured and documented in 2026 but
-not otherwise revived. Two things are worth knowing before you spend time on it:
+Archived university work, restructured in 2026 and given a test suite it never
+had. What is and is not verified:
 
-- **The generated Qsys output is not in the repository.** Quartus and Qsys emit
-  tens of megabytes of derived files, including Intel IP that is not mine to
-  redistribute. You must regenerate the systems in Qsys before the project will
-  compile. [docs/building.md](docs/building.md) covers this.
-- **The 2017 build has not been reproduced.** The design compiled cleanly back
-  then — 2,803 ALMs, 9% of the Cyclone V, with 64% of its block RAM given over
-  to the framebuffer — but I no longer have the board or the toolchain, so the
-  restructured tree here is unverified on hardware. Known discrepancies are
-  listed in [docs/building.md](docs/building.md#known-issues).
+- **The RTL and firmware run.** The peripherals are unit-tested, and the whole
+  SoC executes the real firmware under Verilator on every push. That covers the
+  Clarvi core, both rotary decoders, the button scanner and the memory map.
+- **The FPGA build has not been reproduced.** It compiled cleanly in 2017 —
+  2,803 ALMs, 9% of the Cyclone V, with 64% of its block RAM given over to the
+  framebuffer — but I no longer have the board or that toolchain. Known
+  discrepancies are in [docs/building.md](docs/building.md#known-issues).
+- **The generated Qsys output is not in the repository**, so the Quartus flow
+  needs a Qsys generation step first. The simulation sidesteps this by modelling
+  the interconnect directly.
 
 ## Licence
 

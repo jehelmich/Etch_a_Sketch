@@ -1,5 +1,8 @@
 # Building and running
 
+This page covers the FPGA flow, which needs the board. To run the design
+without one, see [simulation.md](simulation.md).
+
 ## What you need
 
 - **A Terasic DE1-SoC board** (Cyclone V `5CSEMA5F31C6`) and the **Cambridge
@@ -22,14 +25,19 @@ sudo apt install gcc-riscv64-unknown-elf
 make RISCV_PREFIX=riscv64-unknown-elf-
 
 # macOS
-brew tap riscv-software-src/riscv
-brew install riscv-gnu-toolchain
-make RISCV_PREFIX=riscv64-unknown-elf-
+brew install riscv64-elf-gcc
+make RISCV_PREFIX=riscv64-elf-
 ```
 
-Or build [riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)
-with `--with-arch=rv32i --with-abi=ilp32` to get the `riscv32-` prefix the
-Makefile expects by default.
+Verified with `riscv64-elf-gcc` 16.2.0 and Ubuntu's `gcc-riscv64-unknown-elf`.
+
+`init.s` installs a trap handler with `csrw`. GCC 11 moved the CSR instructions
+into the `zicsr` extension, so the default architecture string is
+`rv32i_zicsr`. On a toolchain old enough to predate that split, override it:
+
+```sh
+make RISCV_ARCH=rv32i
+```
 
 ## First time: regenerate the Qsys systems
 
@@ -118,8 +126,13 @@ the time.
 - **SignalTap was disabled.** The project referenced a `stp1.stp` capture file
   that was never committed, which stops the build. Both SignalTap assignments
   have been removed from the `.qsf`.
-- **There is no testbench.** Clarvi's own repository has a test suite; this
-  project has none of its own.
+- **Two modules drove net-typed outputs from procedural blocks.** The top level
+  did it for `LCD_ON` and `LCD_BACKLIGHT`, and `EightBitsToSevenSeg` for both of
+  its digit outputs. Quartus accepts this; stricter tools reject it. Both are
+  fixed, and `make -C sim lint` now guards against it.
+- **The FPGA flow itself is untested since 2017.** Everything in `sim/` runs on
+  every push, but nothing there exercises Quartus, the pin assignments, the
+  timing constraints or PixelStream.
 
 ## What changed in 2026
 
@@ -142,4 +155,10 @@ the original coursework submission:
   `mem.hex` byte-for-byte from the archived `mem.txt`.
 - The C was tidied: `#import` became `#include`, dead code went, the framebuffer
   primitives moved into `display.c`, and headers were renamed to match their
-  implementations. Behaviour is unchanged.
+  implementations. Behaviour is unchanged apart from one fix below.
+- The link step never passed `-march`/`-mabi`, so it only ever worked on a
+  toolchain that could not target anything but rv32. Fixed.
+- `etch_a_sketch()` seeded its previous dial readings with the constant `10`
+  while the hardware counters start at `0`, so the first poll saw a change that
+  had not happened and moved the cursor a pixel before anyone touched a dial.
+  The simulation caught this; both readings are now seeded from the hardware.
