@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  rtl:
+    name: Lint and unit-test the peripherals
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Verilator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends verilator zlib1g-dev
+          verilator --version
+      - run: make -C sim lint
+      - run: make -C sim test
+
+  soc:
+    name: Run the firmware on the simulated SoC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Verilator and a RISC-V cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            verilator zlib1g-dev gcc-riscv64-unknown-elf
+      - name: Build the firmware
+        run: make -C software RISCV_PREFIX=riscv64-unknown-elf-
+      - name: Run the SoC simulation
+        run: make -C sim soc
+      - name: Keep the picture it drew
+        uses: actions/upload-artifact@v4
+        with:
+          name: sketch
+          path: sim/build/sketch.png

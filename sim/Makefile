@@ -78,8 +78,8 @@ $(BUILD)/Vsoc_sim: rtl/soc_sim.sv tb/tb_soc.cpp common/png.h common/tb.h | $(BUI
 	  -LDFLAGS -lz -o $(CURDIR)/$@ > $(BUILD)/soc.buildlog 2>&1 || { cat $(BUILD)/soc.buildlog; exit 1; }
 
 $(BUILD)/Vsoc_sim_trace: rtl/soc_sim.sv tb/tb_soc.cpp common/png.h common/tb.h | $(BUILD)
-	@$(VERILATOR) $(SOC_VFLAGS) --trace-fst -CFLAGS -DTRACE $(WAIVERS) $(SOC_SRCS) tb/tb_soc.cpp \
-	  -LDFLAGS -lz -Mdir $(BUILD)/obj_trace -o $(CURDIR)/$@ > $(BUILD)/soctrace.buildlog 2>&1 || { cat $(BUILD)/soctrace.buildlog; exit 1; }
+	@$(VERILATOR) $(subst $(BUILD)/obj,$(BUILD)/obj_trace,$(SOC_VFLAGS)) --trace -CFLAGS -DTRACE $(WAIVERS) $(SOC_SRCS) tb/tb_soc.cpp \
+	  -LDFLAGS -lz -o $(CURDIR)/$@ > $(BUILD)/soctrace.buildlog 2>&1 || { cat $(BUILD)/soctrace.buildlog; exit 1; }
 
 FIRMWARE := ../software/build/mem.txt
 $(FIRMWARE):
@@ -89,7 +89,7 @@ soc: $(BUILD)/Vsoc_sim $(FIRMWARE)
 	$(BUILD)/Vsoc_sim +mem=$(FIRMWARE) +png=$(BUILD)/sketch.png
 
 waves: $(BUILD)/Vsoc_sim_trace $(FIRMWARE)
-	$(BUILD)/Vsoc_sim_trace +mem=$(FIRMWARE) +png=$(BUILD)/sketch.png +fst=$(BUILD)/soc.fst
+	$(BUILD)/Vsoc_sim_trace +mem=$(FIRMWARE) +png=$(BUILD)/sketch.png +vcd=$(BUILD)/soc.vcd
 
 $(BUILD):
 	@mkdir -p $(BUILD)

@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 #ifdef TRACE
-#include "verilated_fst_c.h"
+#include "verilated_vcd_c.h"
 #endif
 
 static const int WIDTH = 480;
@@ -29,7 +29,8 @@ struct Soc {
 	std::unique_ptr<Vsoc_sim> dut = std::make_unique<Vsoc_sim>();
 	uint64_t cycles = 0;
 #ifdef TRACE
-	VerilatedFstC *fst = nullptr;
+	VerilatedVcdC *vcd = nullptr;
+	uint64_t trace_from = 0, trace_to = 0;
 #endif
 
 	void tick(int n = 1) {
@@ -37,12 +38,12 @@ struct Soc {
 			dut->clock = 0;
 			dut->eval();
 #ifdef TRACE
-			if (fst) fst->dump(cycles * 10);
+			if (vcd && cycles >= trace_from && cycles < trace_to) vcd->dump(cycles * 10);
 #endif
 			dut->clock = 1;
 			dut->eval();
 #ifdef TRACE
-			if (fst) fst->dump(cycles * 10 + 5);
+			if (vcd && cycles >= trace_from && cycles < trace_to) vcd->dump(cycles * 10 + 5);
 #endif
 			cycles++;
 		}
@@ -93,11 +94,18 @@ int main(int argc, char **argv) {
 
 #ifdef TRACE
 	Verilated::traceEverOn(true);
-	std::string fstpath = plusarg("fst", "");
-	if (!fstpath.empty()) {
-		soc.fst = new VerilatedFstC;
-		dut->trace(soc.fst, 4);
-		soc.fst->open(fstpath.c_str());
+	std::string vcdpath = plusarg("vcd", "");
+	if (!vcdpath.empty()) {
+		// A full run would produce an unmanageable trace, so only a window is
+		// dumped. Move it with +trace_from / +trace_cycles.
+		soc.trace_from = std::stoull(plusarg("trace_from", "0"));
+		soc.trace_to = soc.trace_from + std::stoull(plusarg("trace_cycles", "20000"));
+		soc.vcd = new VerilatedVcdC;
+		dut->trace(soc.vcd, 4);
+		soc.vcd->open(vcdpath.c_str());
+		std::printf("  tracing cycles %llu..%llu into %s\n",
+		            (unsigned long long) soc.trace_from,
+		            (unsigned long long) soc.trace_to, vcdpath.c_str());
 	}
 #endif
 
@@ -153,7 +161,7 @@ int main(int argc, char **argv) {
 	tb::check_eq(soc.count_lit(), (size_t) 0, "pressing a dial clears the screen");
 
 #ifdef TRACE
-	if (soc.fst) { soc.fst->close(); delete soc.fst; }
+	if (soc.vcd) { soc.vcd->close(); delete soc.vcd; }
 #endif
 	dut->final();
 	return tb::report("soc");
