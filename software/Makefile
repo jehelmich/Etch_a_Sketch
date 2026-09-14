@@ -29,8 +29,13 @@ LD = $(RISCV_PREFIX)ld
 OBJCOPY = $(RISCV_PREFIX)objcopy
 OBJDUMP = $(RISCV_PREFIX)objdump
 
-# Clarvi implements the base integer instruction set and nothing else.
-TARGET_ARCH = -march=rv32i -mabi=ilp32
+# Clarvi implements the base integer instruction set plus the handful of CSR
+# instructions init.s needs to install a trap handler. GCC 11 and later split
+# those out into the zicsr extension; on an older toolchain that predates the
+# split, override this with RISCV_ARCH=rv32i.
+RISCV_ARCH ?= rv32i_zicsr
+RISCV_ABI  ?= ilp32
+TARGET_ARCH = -march=$(RISCV_ARCH) -mabi=$(RISCV_ABI)
 CCFLAGS = -O0 $(TARGET_ARCH)
 
 # Lists of rules: the name of a file, followed by the files it depends on.
@@ -52,8 +57,10 @@ $(BUILD)/%.o: src/%.S
 	$(CC) -c -o $@ $< $(CCFLAGS)
 
 # link with gcc
+# TARGET_ARCH has to be repeated here: without it the driver picks its default
+# architecture for the link and rejects the 32-bit objects.
 $(BUILD)/$(PROJECT).elf: ${AS_OBJ_FILES} ${C_OBJ_FILES} ${ASP_OBJ_FILES}
-	$(CC) -o $@ $^ -T link.ld -nostdlib
+	$(CC) -o $@ $^ $(TARGET_ARCH) -T link.ld -nostdlib
 
 # build an elf executable
 $(BUILD)/$(PROJECT).dump: $(BUILD)/$(PROJECT).elf
