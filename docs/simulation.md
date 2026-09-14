@@ -104,9 +104,21 @@ make -C sim serve      # then open http://localhost:8000/
 
 Verilator emits C++, and Emscripten compiles that to WebAssembly; SDL2 comes
 from Emscripten's own port, and the firmware image is baked into the virtual
-file system so `$readmemh` still finds it. Appending `?demo` to the URL runs the
-same canned input the headless self-test uses, which is handy for checking the
-build without a pair of hands.
+file system so `$readmemh` still finds it.
+
+The page has drag controls as well as the keyboard, so it works on a phone.
+They do not synthesise key events: the page calls an exported function,
+`etch_input(left, right, clear)`, with each dial's direction and a speed between
+0 and 1 taken from how far the finger has travelled. That matters on a touch
+device, where the canvas cannot take keyboard focus at all. Keys still win when
+both are in play.
+
+Two query parameters help when checking a build:
+
+| | |
+|---|---|
+| `?demo` | run the canned input the headless self-test uses, no hands needed |
+| `?fps=N` | drive the frame loop from a timer at N fps instead of `requestAnimationFrame`, which does not fire in a headless browser |
 
 Two things needed working around, both worth knowing if you touch the build:
 

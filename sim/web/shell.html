@@ -37,6 +37,37 @@
     color: var(--fg);
   }
   #rate { font-variant-numeric: tabular-nums; color: var(--accent); }
+
+  .controls {
+    display: flex; gap: 20px; align-items: center; justify-content: center;
+    margin-top: 18px; flex-wrap: wrap;
+  }
+  .dial { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .dial span { font-size: 0.8rem; color: var(--dim); }
+  .pad {
+    width: 116px; height: 116px; border-radius: 50%;
+    background: #181b22; border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    cursor: grab; touch-action: none;           /* do not scroll the page */
+    user-select: none; -webkit-user-select: none;
+  }
+  .pad:active { cursor: grabbing; border-color: var(--accent); }
+  .knob {
+    width: 46px; height: 46px; border-radius: 50%;
+    background: #2b303b; border: 1px solid #3a4150;
+    pointer-events: none; transition: transform 60ms linear;
+  }
+  .clearbtn {
+    background: #1d2028; color: var(--fg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px 24px; font: inherit; cursor: pointer;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  .clearbtn:active { border-color: var(--accent); }
+  @media (max-width: 520px) {
+    body { padding: 20px 12px; }
+    .pad { width: 100px; height: 100px; }
+    .knob { width: 40px; height: 40px; }
+  }
   #status { color: var(--dim); }
   section { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 24px; }
   h2 { font-size: 1rem; margin: 0 0 8px; font-weight: 600; }
@@ -66,12 +97,24 @@
 
   <div class="bar">
     <div>
-      <kbd>&larr;</kbd><kbd>&rarr;</kbd> left dial &nbsp;
-      <kbd>&uarr;</kbd><kbd>&darr;</kbd> right dial &nbsp;
-      <kbd>space</kbd> clear
+      Drag the dials below, or use
+      <kbd>&larr;</kbd><kbd>&rarr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd>
+      and <kbd>space</kbd>
     </div>
     <div><span id="rate">starting&hellip;</span></div>
   </div>
+  <div class="controls">
+    <div class="dial">
+      <div class="pad" id="padL"><div class="knob" id="knobL"></div></div>
+      <span>left dial &nbsp;&harr;</span>
+    </div>
+    <button class="clearbtn" id="clearBtn">Clear</button>
+    <div class="dial">
+      <div class="pad" id="padR"><div class="knob" id="knobR"></div></div>
+      <span>right dial &nbsp;&updownarrow;</span>
+    </div>
+  </div>
+
   <p id="status">Loading the processor&hellip;</p>
 
   <section>
@@ -127,7 +170,8 @@ make -C sim run           # the same thing you are using now, natively</pre>
     printErr: function (t) { console.error(t); },
     onRuntimeInitialized: function () {
       document.getElementById('status').textContent =
-        'Ready. Click the screen so it receives your keystrokes.';
+        'Ready. Drag a dial to draw. For the keyboard, click the screen first ' +
+        'so it receives your keystrokes.';
     }
   };
   // Keep arrow keys and space from scrolling the page while drawing.
@@ -136,6 +180,74 @@ make -C sim run           # the same thing you are using now, natively</pre>
       e.preventDefault();
   }, { passive: false });
   document.getElementById('canvas').focus();
+
+  // Touch controls. Pointer events cover finger, stylus and mouse alike, so
+  // this is one path rather than three. Values go straight into the simulation
+  // through an exported function; nothing here pretends to be a keyboard, which
+  // matters because a touch device cannot give the canvas keyboard focus.
+  (function () {
+    var left = 0, right = 0, clear = 0;
+
+    function send() {
+      if (window.Module && Module._etch_input)
+        Module._etch_input(left, right, clear);
+    }
+
+    // Drag distance from where the finger landed sets the speed, so a small
+    // movement inches the cursor and a big one runs it along.
+    function dial(padId, knobId, axis, apply) {
+      var pad = document.getElementById(padId);
+      var knob = document.getElementById(knobId);
+      var held = null, origin = 0;
+      var TRAVEL = 46;    // pixels of drag for full speed
+      var DEADZONE = 0.12; // a resting finger should not creep
+
+      pad.addEventListener('pointerdown', function (e) {
+        held = e.pointerId;
+        pad.setPointerCapture(held);
+        origin = (axis === 'x') ? e.clientX : e.clientY;
+        e.preventDefault();
+      });
+      pad.addEventListener('pointermove', function (e) {
+        if (e.pointerId !== held) return;
+        var now = (axis === 'x') ? e.clientX : e.clientY;
+        var d = (now - origin) / TRAVEL;
+        d = Math.max(-1, Math.min(1, d));
+        if (Math.abs(d) < DEADZONE) d = 0;
+        apply(d);
+        knob.style.transform = (axis === 'x')
+          ? 'translateX(' + (d * 28) + 'px)'
+          : 'translateY(' + (d * 28) + 'px)';
+        send();
+        e.preventDefault();
+      });
+      function release(e) {
+        if (e.pointerId !== held) return;
+        held = null;
+        apply(0);
+        knob.style.transform = '';
+        send();
+      }
+      pad.addEventListener('pointerup', release);
+      pad.addEventListener('pointercancel', release);
+      pad.addEventListener('lostpointercapture', release);
+    }
+
+    dial('padL', 'knobL', 'x', function (v) { left = v; });
+    dial('padR', 'knobR', 'y', function (v) { right = v; });
+
+    var btn = document.getElementById('clearBtn');
+    btn.addEventListener('pointerdown', function (e) {
+      clear = 1; send(); e.preventDefault();
+    });
+    function unclear() {
+      // Hold it briefly after release so a quick tap still lands inside the
+      // firmware's polling loop.
+      setTimeout(function () { clear = 0; send(); }, 250);
+    }
+    btn.addEventListener('pointerup', unclear);
+    btn.addEventListener('pointercancel', unclear);
+  })();
 </script>
 {{{ SCRIPT }}}
 </body>

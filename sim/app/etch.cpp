@@ -17,6 +17,7 @@
 #include <SDL.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -86,14 +87,31 @@ static const double DEFAULT_BUDGET_PERIOD = 1.0 / 60.0;
 // The Gray sequence an encoder walks through, one step per quarter detent.
 static const int GRAY[4] = {0b00, 0b01, 0b11, 0b10};
 
+#ifdef __EMSCRIPTEN__
+// Touch controls call this. Keeping it an explicit entry point rather than
+// synthesising keyboard events means the page does not have to pretend to be a
+// keyboard, and the canvas does not need focus -- which it cannot get by touch.
+// left and right are -1..1; anything non-zero turns that dial at that fraction
+// of full speed.
+static double g_in_left = 0.0, g_in_right = 0.0;
+static int g_in_clear = 0;
+
+extern "C" EMSCRIPTEN_KEEPALIVE void etch_input(double left, double right, int clear) {
+	g_in_left = left;
+	g_in_right = right;
+	g_in_clear = clear;
+}
+#endif
+
 struct Dial {
 	int phase = 0;
 	double pending = 0.0;
-	int direction = 0;
+	int direction = 0;   // -1, 0 or +1
+	double speed = 1.0;  // 0..1; a key is always 1, a drag is proportional
 
 	int quarter_steps(double dt) {
 		if (direction != 0)
-			pending += DETENTS_PER_SECOND * dt;
+			pending += DETENTS_PER_SECOND * speed * dt;
 		int detents = (int) pending;
 		pending -= detents;
 		return detents * 4;
@@ -257,7 +275,23 @@ struct App {
 			                 : (k[SDL_SCANCODE_LEFT] || k[SDL_SCANCODE_A]) ? -1 : 0;
 			right.direction = (k[SDL_SCANCODE_DOWN] || k[SDL_SCANCODE_S]) ? 1
 			                  : (k[SDL_SCANCODE_UP] || k[SDL_SCANCODE_W]) ? -1 : 0;
-			sim.dut->buttons = k[SDL_SCANCODE_SPACE] ? BUTTON_DIALL_CLICK : 0;
+			left.speed = right.speed = 1.0;
+			bool clear = k[SDL_SCANCODE_SPACE];
+
+#ifdef __EMSCRIPTEN__
+			// A dial the keyboard is not already turning takes its direction
+			// and speed from the touch controls instead.
+			if (left.direction == 0 && g_in_left != 0.0) {
+				left.direction = g_in_left > 0 ? 1 : -1;
+				left.speed = std::fabs(g_in_left);
+			}
+			if (right.direction == 0 && g_in_right != 0.0) {
+				right.direction = g_in_right > 0 ? 1 : -1;
+				right.speed = std::fabs(g_in_right);
+			}
+			clear = clear || g_in_clear;
+#endif
+			sim.dut->buttons = clear ? BUTTON_DIALL_CLICK : 0;
 		}
 
 		auto sim_start = std::chrono::steady_clock::now();
@@ -394,11 +428,24 @@ int main(int argc, char **argv) {
 	app.last = app.last_report = app.next_frame = std::chrono::steady_clock::now();
 
 #ifdef __EMSCRIPTEN__
-	// Interactively, let the browser schedule frames. The canned demo asks for
-	// a fixed 60, which Emscripten drives from a timer instead -- deterministic,
-	// and it still runs where requestAnimationFrame does not, such as a headless
-	// browser taking a screenshot.
-	emscripten_set_main_loop(frame_callback, app.scripted ? 60 : 0, 1);
+	// Interactively, let the browser schedule frames: requestAnimationFrame
+	// paces to the display, which is what we want. A fixed rate can be asked
+	// for with ?fps=N -- the counterpart of the native --fps flag -- and the
+	// canned demo uses it. Emscripten drives that from a timer, which also
+	// runs where requestAnimationFrame does not, such as a headless browser
+	// taking a screenshot.
+	int fps = EM_ASM_INT({
+		// No regex here: EM_ASM bodies go through the C preprocessor, which
+		// mangles the backslash in a character class.
+		var q = location.search;
+		var i = q.indexOf('fps=');
+		if (i < 0) return 0;
+		var n = parseInt(q.substring(i + 4), 10);
+		return (n > 0 && n <= 240) ? n : 0;
+	});
+	if (app.scripted && fps <= 0)
+		fps = 60;
+	emscripten_set_main_loop(frame_callback, fps, 1);
 	return 0;
 #else
 	while (app.running)
