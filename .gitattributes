@@ -1,0 +1,21 @@
+* text=auto eol=lf
+
+# Quartus and Qsys rewrite these; keep diffs readable but never normalise them.
+*.qsys   text eol=lf
+*.qsf    text eol=lf
+*.qpf    text eol=lf
+*.tcl    text eol=lf
+*.sdc    text eol=lf
+
+# HDL and C sources
+*.sv     text eol=lf diff=cpp
+*.svh    text eol=lf diff=cpp
+*.v      text eol=lf diff=cpp
+*.bsv    text eol=lf
+*.c      text eol=lf diff=cpp
+*.h      text eol=lf diff=cpp
+*.s      text eol=lf
+
+# Generated Bluespec output and the vendored core are not the interesting part
+# of this repository; keep them out of language statistics and diff summaries.
+hardware/ip/pixel_stream/*.v linguist-vendored
