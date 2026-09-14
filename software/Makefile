@@ -19,13 +19,18 @@ ASP_OBJ_FILES := $(patsubst src/%.S,build/%.o,$(ASP_FILES))
 
 
 # settings for the compilers
-RISCV_PREFIX = riscv32-unknown-elf-
+#
+# Override the prefix if your toolchain is named differently, e.g. a multilib
+# 64-bit toolchain can build this target too:
+#     make RISCV_PREFIX=riscv64-unknown-elf-
+RISCV_PREFIX ?= riscv32-unknown-elf-
 CC = $(RISCV_PREFIX)gcc
 LD = $(RISCV_PREFIX)ld
 OBJCOPY = $(RISCV_PREFIX)objcopy
 OBJDUMP = $(RISCV_PREFIX)objdump
 
-TARGET_ARCH = -march=rv32i
+# Clarvi implements the base integer instruction set and nothing else.
+TARGET_ARCH = -march=rv32i -mabi=ilp32
 CCFLAGS = -O0 $(TARGET_ARCH)
 
 # Lists of rules: the name of a file, followed by the files it depends on.
@@ -64,7 +69,7 @@ $(BUILD)/mem.txt: $(BUILD)/mem.bin
 
 # convert to an Intel HEX file for downloading to the FPGA
 $(BUILD)/mem.hex: $(BUILD)/mem.txt
-	python tools/txt2hex.py $< $@ 4
+	python3 tools/txt2hex.py $< $@ 4
 
 
 # make software project folder

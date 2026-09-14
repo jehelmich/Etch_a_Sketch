@@ -210,19 +210,14 @@ module clarvi_fpga(
 
 );
 
-// code goes here
+	// The LCD panel and its backlight are simply held on.
+	assign LCD_BACKLIGHT = 1'b1;
+	assign LCD_ON        = 1'b1;
 
-	
+	// Three hex digits driven by the SoC's hex PIO, one byte per pair of digits.
+	logic [23:0] hexSignal;
 
-	always_comb begin
-		LCD_BACKLIGHT = 1'b1;
-		LCD_ON = 1'b1;
-	end
-
-	 
-	 logic [23:0] hexSignal;
-	 
-	 clarvi_soc qsys0 (
+	clarvi_soc qsys0 (
         .clk_clk                                  (CLOCK_50),// clk.clk
         .hex_pio_external_connection_export       (hexSignal),// hex_pio_external_connection.export
         .led_pio_external_connection_export        (LEDRINGn),// led_pio_external_connection.export
@@ -248,7 +243,7 @@ module clarvi_fpga(
 
 
 	hex_led u0 (
-        .clk_clk                              (CLK_50),//     clk.clk
+        .clk_clk                              (CLOCK_50),//     clk.clk
         .eightbitstosevenseg_0_led_pins_led0  (HEX0),  // eightbitstosevenseg_0_led_pins.led0
         .eightbitstosevenseg_0_led_pins_led1  (HEX1),  //                               .led1
         .reset_reset_n                        (KEY[0]),//                          reset.reset_n
